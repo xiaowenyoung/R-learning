@@ -1,0 +1,230 @@
+---
+title: "Homework_Chapter6"
+author: "Binjie Yang"
+date: "2024-04-11"
+output: html_document
+---
+
+```{r library packages}
+
+library(pacman)
+pacman::p_load(
+  tidyverse,
+  bruceR,
+  ggplot2
+)
+
+```
+
+#Human penguin data process
+
+```{r load data}
+
+rawdata <- read.csv("D:/WORK/硕士/R_related/R4Psy/data/penguin/penguin_rawdata.csv")
+
+df1 <- rawdata
+
+
+```
+
+```{r variables}
+
+df1 <- dplyr::select(df1, 
+                     Temperature_t1, Temperature_t2, 
+                     socialdiversity, 
+                     Site, DEQ, 
+                     romantic, 
+                     ALEX1:ALEX16,
+                     langfamily)
+
+df1 <- filter(df1, !is.na(Temperature_t1) & 
+                   !is.na(Temperature_t2) & 
+                   !is.na(DEQ))
+
+df1 <- dplyr::mutate(df1, Temperature = rowMeans(select(df1,                                                   starts_with("Temperature"))))
+
+# 将4, 12, 14, 16题反向计分，计算ALEX，保存为ALEX
+df1 <- mutate(df1, ALEX4 = case_when(TRUE ~ 6 - ALEX4),
+                   # 反向计分：6减去原始值
+                   ALEX12 = case_when(TRUE ~ 6 - ALEX12),
+                   ALEX14 = case_when(TRUE ~ 6 - ALEX14),
+                   ALEX16 = case_when(TRUE ~ 6 - ALEX16))
+
+df1 <- dplyr::mutate(df1, Alex = rowSums(select(df1,
+                                                starts_with("Alex"))))
+```
+
+```{r select subjects}
+
+df1_2 <- filter(df1, Alex >= 30 & Alex <= 50) %>% 
+       group_by(langfamily) %>% 
+       summarise(mean_temperature = mean(Temperature)) %>% 
+       ungroup()
+  
+df1_3 <- group_by(df1, langfamily) %>% 
+       summarise(mean_DEQ = mean(DEQ)) %>% ungroup()
+```
+
+```{r plot penguin data}
+
+pp1 <- ggplot(df1, aes(x = DEQ, y = Temperature)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  theme_classic()
+pp1
+
+```
+
+#RT data process
+
+```{r load data}
+
+# 把所有符合某种标题的文件全部读取到一个list中
+# 使用 full.names 参数获取完整路径的文件列表
+files <- list.files("D:/WORK/硕士/R_related/R4Psy/data/match", 
+                    pattern = "data_exp7_rep_match_.*\\.out$", 
+                    full.names = TRUE)
+
+head(files, n = 10L)
+
+# 定义函数用于数据类型转换
+convert_data_types = function(df) {
+  df <- df %>%
+    dplyr::mutate(Date = as.character(Date),
+                  Prac = as.character(Prac),
+                  Sub = as.numeric(Sub),
+                  Age = as.numeric(Age),
+                  Sex = as.character(Sex),
+                  Hand = as.character(Hand),
+                  Block = as.numeric(Block),
+                  Bin = as.numeric(Bin),
+                  Trial = as.numeric(Trial),
+                  Shape = as.character(Shape),
+                  Label = as.character(Label),
+                  Match = as.character(Match),
+                  CorrResp = as.character(CorrResp),
+                  Resp = as.character(Resp),
+                  ACC = as.numeric(ACC),
+                  RT = as.numeric(RT))
+  return(df)
+}
+
+# 创建一个空的数据框来存储读取的数据
+df3 <- data.frame()
+# 循环读取每个文件，处理数据并添加到数据框中
+for (i in seq_along(files)) { # 重复"读取到的.out个数"的次数
+  # 读取数据文件
+  df <- read.table(files[i], header = TRUE) 
+  # 使用 filter 函数过滤掉 Date 列值为 "Date" 的行
+  df <- dplyr::filter(df, Date != "Date") 
+  # 调用函数进行数据类型转换
+  df <- convert_data_types(df)
+  # 使用 bind_rows() 函数将当前数据框与之前的数据框合并
+  df3 <- dplyr::bind_rows(df3, df)
+}
+
+# 清除中间变量
+rm(df, files, i)
+
+head(df3, 10)
+
+```
+
+# Class examples
+
+```{r select variables}
+
+df3 <- dplyr::select(df3,
+                     Sub, Age, Sex, Hand, #人口统计学
+                     Block, Bin, Trial, # 试次
+                     Shape, Label, Match, # 刺激
+                     Resp, ACC, RT) # 反应结果
+
+# 删除缺失值，选择符合标准的被试
+df4 <- tidyr::drop_na(df3) # 删除含有缺失值的行
+df4 <- dplyr::filter(df3, Hand == "R", # 选择右利手被试
+                    ACC == 0 | ACC == 1 , # 排除无效应答（ACC = -1 OR 2)
+                    RT >= 0.2 & RT <= 1.5)  # 选择RT属于[200,1500]
+
+```
+
+```{r summarise data}
+
+# 分实验条件计算
+df4 <- dplyr::group_by(df4, Sub, Shape, Label, Match) %>% 
+       dplyr::summarise(mean_ACC = mean(ACC), mean_RT = mean(RT)) %>% 
+       dplyr::ungroup()
+
+# 将Shape变量拆分
+df4 <- tidyr::extract(df4, Shape, into = c("Valence", "Identity"),
+                     regex = "(moral|immoral)(Self|Other)", 
+                     remove = FALSE)
+df4 <- dplyr::filter(df4, Match == "match" & Valence == "moral")
+
+# 将长数据转为宽数据
+df4 <- dplyr::select(df4, Sub, Identity, mean_RT)
+df4 <- tidyr::pivot_wider(df4, names_from = "Identity", values_from = "mean_RT")
+
+# 计算SPE
+df4 <- dplyr::mutate(df4, moral_SPE = Self - Other)
+df4 <- dplyr::select(df4, Sub, moral_SPE)
+
+```
+
+#My turn
+
+```{r analyse d-prime}
+data_df <- dplyr::select(df3,
+                     Sub, Age, Sex, Hand, #人口统计学
+                     Block, Bin, Trial, # 试次
+                     Shape, Label, Match, # 刺激
+                     Resp, ACC, RT) # 反应结果
+
+# 删除缺失值，选择符合标准的被试
+data_df <- tidyr::drop_na(data_df) # 删除含有缺失值的行
+data_df <- dplyr::filter(data_df, Hand == "R", # 选择右利手被试
+                    ACC == 0 | ACC == 1 , # 排除无效应答（ACC = -1 OR 2)
+                    RT >= 0.2 & RT <= 1.5)  # 选择RT属于[200,1500]
+
+
+             #Step2: 基于Sub和Shape分组
+dprime_df <- group_by(data_df, Sub, Shape) %>%
+  
+             #Step3: 使用计算公式
+             dplyr::summarise(
+                    hit = length(ACC[Match == "match" & ACC == 1]),
+                    fa = length(ACC[Match == "mismatch" & ACC == 0]),
+                    miss = length(ACC[Match == "match" & ACC == 0]),
+                    cr = length(ACC[Match == "mismatch" & ACC == 1]),
+                    Dprime = qnorm(ifelse(
+                    hit / (hit + miss) < 1,
+                    hit / (hit + miss),
+                    1 - 1 / (2 * (hit + miss))
+                    ))
+                    - qnorm(ifelse(fa / (fa + cr) > 0,
+                    fa / (fa + cr),
+                    1 / (2 * (
+                    fa + cr
+                    ))))) %>% ungroup() %>%
+  
+             #Step3: 删除击中、虚报、误报、正确拒绝
+             select(Sub, Shape, Dprime)
+
+             #Step4: 长转宽，得到每个Shape情况下的信号检测论d值
+dprime_wide <- pivot_wider(dprime_df, names_from = "Shape", 
+                              values_from = "Dprime" )
+```
+
+```{r plot dprime values}
+
+# 将Shape列转换为因子，并指定因子水平的顺序
+dprime_df$Shape <- factor(dprime_df$Shape, 
+                           levels = c("moralSelf", "immoralSelf",
+                                      "moralOther", "immoralOther"))
+
+p1 <- ggplot(dprime_df, aes(x = Shape, y = Dprime))+
+  geom_boxplot(staplewidth = 0.5)+
+  theme_classic()
+p1
+
+```
